@@ -384,7 +384,7 @@ int gb_instr(uint8_t op) {
             op = read_byte;
         } else if (has_halt) {
             regs.pc--;
-            cycles += 1;
+            cycles += 2; // used to be 1 but CPU usage wasn't the best tbh' 
             return 0;
         }
 
