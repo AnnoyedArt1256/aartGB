@@ -384,7 +384,7 @@ int gb_instr(uint8_t op) {
             op = read_byte;
         } else if (has_halt) {
             regs.pc--;
-            cycles += 2; // used to be 1 but CPU usage wasn't the best tbh' 
+            cycles += 2; // used to be 1 but CPU usage wasn't the best tbh
             return 0;
         }
 
@@ -1134,7 +1134,7 @@ void callback(void *udata, uint8_t *stream, int len)
                 vol = chans[ch].volume * chan_playing(&chans[ch]);
                 freq = noise_div[chans[ch].lfsr_div]<<chans[ch].freq;
                 if (pers[ch] >= freq) {
-                    pers[ch] -= freq;
+                    pers[ch] = 0;
 
                     uint16_t xor = (LFSR & 1) ^ ((LFSR >> 1) & 1);
                     LFSR = (LFSR >> 1) | (xor << 14);
@@ -1147,7 +1147,7 @@ void callback(void *udata, uint8_t *stream, int len)
 
                 if (LFSR&1) vol = -vol;
 
-                out += ((float)(vol))/10.5;
+                out += ((float)(vol))/11.0;
             } else if (ch != 2) {
                 pers[ch] += 16;
                 vol = chans[ch].volume * (chan_playing(&chans[ch]) * ((2048 - chans[ch].freq)==0?0:1));
