@@ -1,4 +1,4 @@
-// code "borrowed" from MiniGBS :/
+// audio code modified from MiniGBS :/
 #include <math.h>
 #include <stdio.h>
 #include <stdint.h>
