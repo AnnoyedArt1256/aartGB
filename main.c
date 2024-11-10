@@ -1283,8 +1283,6 @@ int main(int argc, char *argv[]) {
     int time = SDL_GetTicks() + 17;
     buttons = 0;
 
-    for (int i = 0; i < 3; i++) freq_ticks[i] = -1;
-
     while (!quit) {
         while (SDL_PollEvent(&event)) {
             switch (event.type) {

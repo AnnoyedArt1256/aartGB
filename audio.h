@@ -267,10 +267,8 @@ void chan_update_len(int i) {
 	c->len.counter = 0.0f;
 }
 
-int freq_ticks[3];
-
 void update_freq_ticks(int cycles) {
-    for (int i = 0; i < 3; i++) {
+    for (int i = 1; i < 3; i++) {
         chans[i].freq = chans[i].temp_freq; 
     }
 }
@@ -331,8 +329,8 @@ void audio_write(uint16_t addr, uint8_t val){
 		case 0xFF13:
 		case 0xFF18:
 		case 0xFF1D:
-            freq_ticks[i] = 0;
 			chans[i].temp_freq = (chans[i].temp_freq&0xff00)|val;
+            if (i == 0) chans[i].freq = chans[i].temp_freq;
 			break;
 
 		case 0xFF1A:
@@ -343,8 +341,8 @@ void audio_write(uint16_t addr, uint8_t val){
 		case 0xFF14:
 		case 0xFF19:
 		case 0xFF1E:
-            freq_ticks[i] = 0;
 			chans[i].temp_freq = (chans[i].temp_freq&0xff)|((val&7)<<8);
+            if (i == 0) chans[i].freq = chans[i].temp_freq;
 
 		case 0xFF23:
 			chans[i].len.enabled = val & 0x40;
