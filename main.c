@@ -90,6 +90,7 @@ uint8_t readGB(uint16_t addr) {
         if (CGB_MODE) {
             if (addr >= 0xA000 && addr < 0xD000) return ram[addr-0xa000];
             if (addr >= 0xD000 && addr < 0xE000) return ram[(addr-0xa000)+((gb_io[0x70]&7)<<12)];
+            if (addr >= 0xE000 && addr < 0xFE00) return ram[(addr-0xd000)+((gb_io[0x70]&7)<<12)];
         } else {
             if (addr >= 0xA000 && addr < 0xE000) return ram[addr-0xa000];
             if (addr >= 0xE000 && addr < 0xFE00) return ram[addr-0xe000+8192];
@@ -160,6 +161,7 @@ void writeGB(uint16_t addr, uint8_t val) {
         if (CGB_MODE) {
             if (addr >= 0xA000 && addr < 0xD000) ram[addr-0xa000] = val;
             if (addr >= 0xD000 && addr < 0xE000) ram[(addr-0xa000)+((gb_io[0x70]&7)<<12)] = val;
+            if (addr >= 0xE000 && addr < 0xFE00) ram[(addr-0xd000)+((gb_io[0x70]&7)<<12)] = val;
         } else {
             if (addr >= 0xA000 && addr < 0xE000) ram[addr-0xa000] = val;
             if (addr >= 0xE000 && addr < 0xFE00) ram[addr-0xe000+8192] = val;
@@ -1321,7 +1323,7 @@ int main(int argc, char *argv[]) {
 
     CGB_MODE = rom[0x143]>>7&1; // set CGB mode if bit 7 is set
 
-    memset(ram,0,8192);
+    memset(ram,0,65536);
     memset(hram,0,128);
     memset(gb_io,0,128);
     memset(oam,0,256);
