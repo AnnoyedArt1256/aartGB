@@ -122,10 +122,10 @@ uint8_t readGB(uint16_t addr) {
             }
             return JOYP;
         }
-        if (addr == 0xFF69) {
+        if (addr == 0xFF69 && CGB_MODE) {
             return BGP_colors[gb_io[0x68]&0x3f];
         }
-        if (addr == 0xFF6B) {
+        if (addr == 0xFF6B && CGB_MODE) {
             return OGP_colors[gb_io[0x6A]&0x3f];
         }
         if (addr >= 0xFF10 && addr < 0xFF40) return gb_io[addr&0x7f]|ortab[(addr&0x7f)-0x10];
@@ -454,8 +454,6 @@ void gb_irq(int do_coincidence_check) {
                 trig_stat |= 1<<3;
             }
         }
-    } else if (LY == 153) {
-        gb_io[0x41] = (gb_io[0x41]&(255^3))|0; // mode 0: hblank (huh?)
     }
 
     uint8_t new_buttons = readGB(0xFF00)&0xf;
@@ -473,7 +471,7 @@ int gb_instr(uint8_t op) {
 
     gb_irq(0);
 
-    if (DMA_len != 0) {
+    if (DMA_len != 0 && CGB_MODE) {
         uint8_t do_hdma = DMA_mode == 1 && (line_cycles >= (62<<DOUBLE_SPEED) || line_cycles <= (20<<DOUBLE_SPEED)) && LY < 144 && (!has_halt) && (!did_HDMA);
         if (do_hdma) did_HDMA = 1;
         if (do_hdma || (DMA_mode == 0)) { 
@@ -524,7 +522,7 @@ int gb_instr(uint8_t op) {
                 invoke_irq(0x50);
                 gb_io[0x0F] ^= 1<<2;
                 op = read_byte;
-            }  else if (can_int & (1<<4)) { // TIMER
+            } else if (can_int & (1<<4)) { // TIMER
                 invoke_irq(0x60);
                 gb_io[0x0F] ^= 1<<4;
                 op = read_byte;
@@ -1565,8 +1563,6 @@ int main(int argc, char *argv[]) {
             }
             if (STAT&(1<<4)) gb_io[0x0F] |= 1<<1;
             gb_io[0x41] = (gb_io[0x41]&(255^3))|1; // mode 1: vblank
-          } else if (LY == 153) {
-            gb_io[0x41] = (gb_io[0x41]&(255^3))|0; // mode 0: hblank (huh?)
           }
         }
 
@@ -1580,5 +1576,7 @@ int main(int argc, char *argv[]) {
         }
 
     }
+
+    free(rom);
     return 0;
 }
