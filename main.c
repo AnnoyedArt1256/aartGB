@@ -8,8 +8,8 @@
 
 uint32_t pixels[160*144];
 
-uint8_t vram[0x2000];
-uint8_t ram[0x8000];
+uint8_t vram[0x4000];
+uint8_t ram[0x10000];
 uint8_t hram[128];
 uint8_t gb_io[128];
 uint8_t oam[256];
@@ -21,12 +21,18 @@ int line_cycles = 0;
 uint8_t buttons = 0;
 uint8_t button_mode = 0;
 
+uint8_t BGP_colors[64];
+uint8_t OGP_colors[64];
+
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_audio.h>
 #include "audio.h"
 #include "renderer.h"
 
 uint8_t *rom;
+
+int CGB_MODE = 0;
+int DOUBLE_SPEED = 0;
 
 const uint8_t cycle_lut[256] = {
    1, 3, 2, 2, 1, 1, 2, 1, 5, 2, 2, 2, 1, 1, 2, 1, 1, 3, 2, 2, 1, 1, 2, 1, 3, 2, 2, 2, 1, 1, 2, 1, 2, 3, 2, 2, 1, 1, 2, 1, 2, 2, 2, 2, 1, 1, 2, 1, 2, 3, 2, 2, 3, 3, 3, 1, 2, 2, 2, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 2, 3, 3, 4, 3, 4, 2, 4, 2, 4, 3, 0, 3, 6, 2, 4, 2, 3, 3, 0, 3, 4, 2, 4, 2, 4, 3, 0, 3, 0, 2, 4, 3, 3, 2, 0, 0, 4, 2, 4, 4, 1, 4, 0, 0, 0, 2, 4, 3, 3, 2, 1, 0, 4, 2, 4, 3, 2, 4, 1, 0, 0, 2, 4
@@ -74,15 +80,27 @@ uint8_t load_flag_reg() {
 uint8_t readGB(uint16_t addr) {
     //printf("R: %04x\n",addr);
     if (addr & 0x8000) {
-        if (addr >= 0x8000 && addr < 0xA000) return vram[addr&0x1fff];
-        if (addr >= 0xA000 && addr < 0xE000) return ram[addr-0xa000];
-        if (addr >= 0xE000 && addr < 0xFE00) return ram[addr-0xe000+8192];
+        if (addr >= 0x8000 && addr < 0xA000) {
+            if (!CGB_MODE) {
+                return vram[addr&0x1fff];
+            } else {
+                return vram[(addr&0x1fff)|((gb_io[0x4F]&1)<<13)];
+            }
+        }
+        if (CGB_MODE) {
+            if (addr >= 0xA000 && addr < 0xD000) return ram[addr-0xa000];
+            if (addr >= 0xD000 && addr < 0xE000) return ram[(addr-0xa000)+((gb_io[0x70]&7)<<12)];
+        } else {
+            if (addr >= 0xA000 && addr < 0xE000) return ram[addr-0xa000];
+            if (addr >= 0xE000 && addr < 0xFE00) return ram[addr-0xe000+8192];
+        }
         if (addr >= 0xFE00 && addr < 0xFF00) return oam[addr&0xff];
         if (addr == 0xFF44) {
             return LY;
         }
-        if (addr == 0xFF4D) {
-            return 0xFF;
+
+        if (addr == 0xFF4D && CGB_MODE) {
+            return (gb_io[0x4D]&0x7f)|(DOUBLE_SPEED?0x80:0);
         }
         if (addr == 0xFF00) {
             uint8_t JOYP = button_mode<<4;
@@ -104,6 +122,12 @@ uint8_t readGB(uint16_t addr) {
             }
             return JOYP;
         }
+        if (addr == 0xFF69) {
+            return BGP_colors[gb_io[0x68]&0x3f];
+        }
+        if (addr == 0xFF6B) {
+            return OGP_colors[gb_io[0x6A]&0x3f];
+        }
         if (addr >= 0xFF10 && addr < 0xFF40) return gb_io[addr&0x7f]|ortab[(addr&0x7f)-0x10];
         if (addr >= 0xFF00 && addr < 0xFF80) return gb_io[addr&0x7f];
         if (addr >= 0xFF80) return hram[addr&0x7f];
@@ -117,12 +141,30 @@ uint8_t readGB(uint16_t addr) {
     }
 }
 
+int32_t DMA_len = 0;
+uint8_t DMA_mode = 0;
+uint16_t DMA_start_addr = 0;
+uint16_t DMA_end_addr = 0;
+
 void writeGB(uint16_t addr, uint8_t val) {
     //printf("W: %04x %02x\n",addr,val);
     if (addr & 0x8000) {
-        if (addr >= 0x8000 && addr < 0xA000) vram[addr&0x1fff] = val;
-        if (addr >= 0xA000 && addr < 0xE000) ram[addr-0xa000] = val;
-        if (addr >= 0xE000 && addr < 0xFE00) ram[addr-0xe000+8192] = val;
+        if (addr >= 0x8000 && addr < 0xA000) {
+            if (!CGB_MODE) {
+                vram[addr&0x1fff] = val;
+            } else {
+                // write to designated VRAM bank (0-1)
+                vram[(addr&0x1fff)|((gb_io[0x4F]&1)<<13)] = val;
+            }
+        }
+        if (CGB_MODE) {
+            if (addr >= 0xA000 && addr < 0xD000) ram[addr-0xa000] = val;
+            if (addr >= 0xD000 && addr < 0xE000) ram[(addr-0xa000)+((gb_io[0x70]&7)<<12)] = val;
+        } else {
+            if (addr >= 0xA000 && addr < 0xE000) ram[addr-0xa000] = val;
+            if (addr >= 0xE000 && addr < 0xFE00) ram[addr-0xe000+8192] = val;
+        }
+
         if (addr >= 0xFE00 && addr < 0xFF00) oam[addr&0xff] = val;
         if (addr >= 0xFF10 && addr < 0xFF40) { 
             if ((gb_io[0x26]&128)||(addr==0xFF26)) audio_write(addr,val);
@@ -138,6 +180,70 @@ void writeGB(uint16_t addr, uint8_t val) {
                     }
                     break;
                 }
+
+                case 0x70:
+                    gb_io[0x70] = (val&7)==0?1:(val&7);
+                    break;
+
+                case 0x51:
+                case 0x52:
+                case 0x53:
+                case 0x54: {
+                    if (CGB_MODE) {
+                        gb_io[addr&0x7f] = val;
+                        DMA_start_addr = gb_io[0x52]|(gb_io[0x51]<<8);
+                        DMA_start_addr &= ~15;
+                        DMA_end_addr = gb_io[0x54]|(gb_io[0x53]<<8);
+                        DMA_end_addr &= ~15;
+                        DMA_end_addr &= ~(7<<13);
+                        DMA_end_addr &= 0x1fff;
+                        DMA_end_addr |= 0x8000;
+                    } else {
+                        gb_io[addr&0x7f] = val;
+                    }
+                    break;
+                }
+
+                case 0x55: { // VRAM DMA length/mode/start
+                    if (CGB_MODE) {
+                        if (val&128) {
+                            // hblank HDMA
+                            DMA_len = ((val&127)+1)<<4;
+                            DMA_mode = 1;
+                        } else {
+                            // general purpose DMA
+                            DMA_len = ((val&127)+1)<<4;
+                            DMA_mode = 0;
+                        }
+                        gb_io[addr&0x7f] = val;
+                    } else {
+                        gb_io[addr&0x7f] = val;
+                    }
+                    break;
+                }
+
+                case 0x69: { // BCPD/BGPD
+                    if (CGB_MODE) {
+                        uint8_t auto_inc = gb_io[0x68]>>7;
+                        BGP_colors[gb_io[0x68]&0x3f] = val;
+                        gb_io[0x68] = ((gb_io[0x68]+auto_inc)&0x3f)|(gb_io[0x68]&0x80);
+                    } else {
+                        gb_io[addr&0x7f] = val;
+                    }
+                    break;
+                }
+
+                case 0x6B: { // OCPD/OBPD
+                    if (CGB_MODE) {
+                        uint8_t auto_inc = gb_io[0x6A]>>7;
+                        OGP_colors[gb_io[0x6A]&0x3f] = val;
+                        gb_io[0x6A] = ((gb_io[0x6A]+auto_inc)&0x3f)|(gb_io[0x6A]&0x80);
+                    } else {
+                        gb_io[addr&0x7f] = val;
+                    }
+                    break;
+                }
+
                 case 0x41: // STAT
                     gb_io[addr&0x7f] = (val&0b01111000)|(gb_io[addr&0x7f]&7);
                     break;
@@ -299,6 +405,7 @@ int cycles = 0;
 int do_irq = 1;
 int has_halt = 0;
 int last_halt = 0;
+uint8_t did_HDMA = 0;
 
 void invoke_irq(uint16_t addr) {
     // save PC into stack
@@ -323,7 +430,7 @@ void gb_irq(int do_coincidence_check) {
     uint8_t STAT = gb_io[0x41];
     if (LY == LYC) {
         gb_io[0x41] |= 1<<2; // LYC == LY
-        if (STAT & (1<<6) && !(trig_stat&(1<<1))) {
+        if ((STAT & (1<<6)) && !(trig_stat&(1<<1))) {
           gb_io[0x0F] |= 1<<1; // IF |= LCD
           trig_stat |= 1<<1;
         }
@@ -332,13 +439,13 @@ void gb_irq(int do_coincidence_check) {
     }
 
     if (LY < 144) {
-        if (line_cycles < 20) {
+        if (line_cycles < (20<<DOUBLE_SPEED)) {
             gb_io[0x41] = (gb_io[0x41]&(255^3))|2; // mode 2: OAM scan
             if (gb_io[0x41]&(1<<5)&&!(trig_stat&(1<<5))) {
                 gb_io[0x0F] |= 1<<1;
                 trig_stat |= 1<<5;
             }
-        } else if (line_cycles < 62) {
+        } else if (line_cycles < (62<<DOUBLE_SPEED)) {
             gb_io[0x41] = (gb_io[0x41]&(255^3))|3; // mode 3: LCD rendering
         } else {
             gb_io[0x41] = (gb_io[0x41]&(255^3))|0; // mode 0: hblank
@@ -347,6 +454,8 @@ void gb_irq(int do_coincidence_check) {
                 trig_stat |= 1<<3;
             }
         }
+    } else if (LY == 153) {
+        gb_io[0x41] = (gb_io[0x41]&(255^3))|0; // mode 0: hblank (huh?)
     }
 
     uint8_t new_buttons = readGB(0xFF00)&0xf;
@@ -359,9 +468,32 @@ void gb_irq(int do_coincidence_check) {
 }
 
 int gb_instr(uint8_t op) {
-
     //if (regs.pc >= 0x1c0 && regs.pc < 0x200) printf("%d ",line_cycles);
+
+
     gb_irq(0);
+
+    if (DMA_len != 0) {
+        uint8_t do_hdma = DMA_mode == 1 && (line_cycles >= (62<<DOUBLE_SPEED) || line_cycles <= (20<<DOUBLE_SPEED)) && LY < 144 && (!has_halt) && (!did_HDMA);
+        if (do_hdma) did_HDMA = 1;
+        if (do_hdma || (DMA_mode == 0)) { 
+            regs.pc--;
+            for (int i = 0; i < 16; i++) writeGB(DMA_end_addr++,readGB(DMA_start_addr++));
+            DMA_len -= 16;
+            if (DMA_len == 0) {
+                gb_io[0x55] &= 0x7F;
+
+                gb_io[0x51] = (DMA_start_addr>>8)&0xff;
+                gb_io[0x52] = DMA_start_addr&(0xff^15);
+
+                gb_io[0x53] = (DMA_end_addr>>8)&0xff;
+                gb_io[0x54] = DMA_end_addr&(0xff^15);
+
+            }
+            cycles += 8<<DOUBLE_SPEED;
+            return 0;
+        }
+    }
 
     if (has_halt || (do_irq && (hram[0x7F]&gb_io[0x0F]&0x1f))) {
         uint8_t can_int = hram[0x7F] & gb_io[0x0F] & 0x1f; // IE & IF
@@ -702,7 +834,10 @@ int gb_instr(uint8_t op) {
 
         if (op == 0b00010000) {
             // stop
-            // NOP moment (i'm too lazy lol)
+            if ((gb_io[0x4D]&1) && CGB_MODE) {
+                DOUBLE_SPEED ^= 1;
+                gb_io[0x4D] &= 0xFE;
+            }
             read_byte;
             return 0;
         }
@@ -1106,12 +1241,12 @@ uint8_t noise_div[8] = {8, 16, 32, 48, 64, 80, 96, 112};
 
 void callback(void *udata, uint8_t *stream, int len)
 {
-    nsamples = len;
+    nsamples = len>>1;
     update_square(0);
     update_square(1);
     update_wave();
     update_noise();
-    for (int i = 0; i < len>>1; i++) {
+    for (int i = 0; i < len>>2; i++) {
         float out = 0.0;
         for (int ch = 0; ch < 4; ch++) {
             uint16_t freq = 2048-chans[ch].freq;
@@ -1138,7 +1273,7 @@ void callback(void *udata, uint8_t *stream, int len)
 
                 if (LFSR&1) vol = -vol;
 
-                out += ((float)(vol))/11.0;
+                out += ((float)(vol))/10.0;
             } else if (ch != 2) {
                 pers[ch] += 16;
                 vol = chans[ch].volume * (chan_playing(&chans[ch]) * ((2048 - chans[ch].freq)==0?0:1));
@@ -1158,7 +1293,8 @@ void callback(void *udata, uint8_t *stream, int len)
                 out += ((float)(vol))/8.0;
             }
         }
-        ((int16_t*)stream)[i] = (int16_t)(out/16.0*32767.0);
+        ((int16_t*)stream)[i<<1|0] = (int16_t)(out/16.0*32767.0*vol_l);
+        ((int16_t*)stream)[i<<1|1] = (int16_t)(out/16.0*32767.0*vol_r);
     }
 }
 
@@ -1175,6 +1311,7 @@ int get_writeable() {
 int main(int argc, char *argv[]) {
 	FILE* file = fopen(argv[1], "rb");
     
+
     fseek(file,0L,SEEK_END);
     long size = ftell(file);
     rom = (uint8_t*)malloc(size+1);
@@ -1183,6 +1320,8 @@ int main(int argc, char *argv[]) {
         rom[i] = fgetc(file);
     }
     fclose(file);
+
+    CGB_MODE = rom[0x143]>>7&1; // set CGB mode if bit 7 is set
 
     memset(ram,0,8192);
     memset(hram,0,128);
@@ -1196,11 +1335,15 @@ int main(int argc, char *argv[]) {
     gb_io[0x48] = 0xE4; // OBP0
     gb_io[0x49] = 0xE4; // OBP1
 
+    gb_io[0x70] = 1; // OBP1
+
     ram_bank = 1;
     regs.pc = 0x100;
     regs.sp = 0xFFFE;
 
     regs.a = 0x01;
+    if (CGB_MODE) regs.a = 0x11;
+
     regs.b = 0x00;
     regs.c = 0x13;
     regs.d = 0x00;
@@ -1229,7 +1372,7 @@ int main(int argc, char *argv[]) {
 	SDL_AudioSpec wanted;
 	wanted.freq = SAMPLE_RATE;
 	wanted.format = AUDIO_S16;
-	wanted.channels = 1;
+	wanted.channels = 2;
 	wanted.samples = 512;
 	wanted.callback = callback;
 	wanted.userdata = &audio_buffer;
@@ -1264,7 +1407,7 @@ int main(int argc, char *argv[]) {
 	SDL_RenderSetIntegerScale(renderer, 1);
 
 	SDL_Texture *texture = SDL_CreateTexture(renderer,
-				    SDL_PIXELFORMAT_RGBA32,
+				    SDL_PIXELFORMAT_BGRA32,
 				    SDL_TEXTUREACCESS_STREAMING,
 				    160, 144);
 
@@ -1273,6 +1416,9 @@ int main(int argc, char *argv[]) {
     int frame = 0;
     int time = SDL_GetTicks() + 17;
     buttons = 0;
+
+    DMA_len = 0;
+    DMA_mode = 0;
 
     while (!quit) {
         while (SDL_PollEvent(&event)) {
@@ -1353,7 +1499,7 @@ int main(int argc, char *argv[]) {
             div_cycles -= 64;
             gb_io[0x04]++;
             uint8_t DIV = gb_io[0x04];
-            if ((DIV&0x3f) == 0) {
+            if ((DIV&(DOUBLE_SPEED?0x7f:0x3f)) == 0) {
                 for (int i = 0; i < 32; i++) {
                     uint8_t wav = gb_io[0x30|(i>>1)];
                     if (!(i&1)) {
@@ -1388,7 +1534,7 @@ int main(int argc, char *argv[]) {
         uint8_t LCDC = gb_io[0x40];
           
 
-        if (line_cycles >= 114) {
+        if (line_cycles >= (114<<DOUBLE_SPEED)) {
           if (LY == 143) {
               //render_cli();   
 		      SDL_UpdateTexture(texture, NULL, &pixels, 160 * sizeof(uint32_t));
@@ -1405,25 +1551,31 @@ int main(int argc, char *argv[]) {
               frame = 0;
           }
 
+          did_HDMA = 0;
           did_render = 0;
           trig_stat &= ~((1<<5)|(1<<3)|(1<<1)); // omit hblank from reg
 
-          line_cycles -= 114;
+          line_cycles -= 114<<DOUBLE_SPEED;
 
           LY = (LY+1)%154;
-        }
 
-
-        if (line_cycles >= 20 && (!did_render)) {
-          did_render = 1;
           if (LY == 144) {
             if (LCDC & 128) {
                 gb_io[0x0F] |= 1<<0; // vblank
             }
             if (STAT&(1<<4)) gb_io[0x0F] |= 1<<1;
             gb_io[0x41] = (gb_io[0x41]&(255^3))|1; // mode 1: vblank
-          } else if (LY < 144) {
-            do_scanline(LY);         
+          } else if (LY == 153) {
+            gb_io[0x41] = (gb_io[0x41]&(255^3))|0; // mode 0: hblank (huh?)
+          }
+        }
+
+
+        if ((line_cycles >= (20<<DOUBLE_SPEED)) && (!did_render)) {
+          did_render = 1;
+          if (LY < 144) {
+            if (CGB_MODE) do_scanline_CGB(LY);
+            else do_scanline(LY);         
           }
         }
 
