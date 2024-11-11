@@ -158,16 +158,6 @@ void writeGB(uint16_t addr, uint8_t val) {
 
 #define read_byte (readGB(regs.pc++))
 
-
-// yes i know this is awful, but i want CPU go brrr
-#define s_0 2
-#define s_1 3
-#define s_x 0
-#define check_bits(b,A,B,C,D,E,F,G,H) \
-    (b&((A>>1)<<7|(B>>1)<<6|(C>>1)<<5|(D>>1)<<4|(E>>1)<<3|(F>>1)<<2|(G>>1)<<1|(H>>1)<<0)) \
-    == \
-    ((A&1)<<7|(B&1)<<6|(C&1)<<5|(D&1)<<4|(E&1)<<3|(F&1)<<2|(G&1)<<1|(H&1)<<0)
-
 void write_r16(uint8_t reg, uint16_t val) {
     switch (reg&3) {
         case 0:
@@ -519,12 +509,12 @@ int gb_instr(uint8_t op) {
         return 1;
     } else {
         cycles += cycle_lut[op];
-        if (check_bits(op,s_1,s_1,s_1,s_1,s_0,s_0,s_1,s_1)) {
+        if (op == 0b11110011) {
             // di (NOT IMPLEMENTED)
             do_irq = 0;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_1,s_1,s_0,s_1,s_1)) {
+        if (op == 0b11111011) {
             // ei (NOT IMPLEMENTED)
             do_irq = 1;
             return 0;
@@ -532,28 +522,28 @@ int gb_instr(uint8_t op) {
 
         // BLOCK 0
 
-        if (check_bits(op,s_0,s_0,s_0,s_0,s_0,s_0,s_0,s_0)) {
+        if (op == 0b00000000) {
             // NOP (yay!)
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_x,s_x,s_0,s_0,s_0,s_1)) {
+        if ((op&0b11001111) == 0b00000001) {
             // ld r16, imm16
             uint16_t imm = read_byte;
             imm |= (read_byte)<<8;
             write_r16(op>>4&3,imm);
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_x,s_x,s_0,s_0,s_1,s_0)) {
+        if ((op&0b11001111) == 0b00000010) {
             // ld [r16mem], a
             writeGB(read_r16mem(op>>4&3),regs.a); 
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_x,s_x,s_1,s_0,s_1,s_0)) {
+        if ((op&0b11001111) == 0b00001010) {
             // ld a, [r16mem]
             regs.a = readGB(read_r16mem(op>>4&3));  
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_0,s_0,s_1,s_0,s_0,s_0)) {
+        if (op == 0b00001000) {
             // ld [imm16], sp
             uint16_t imm = read_byte;
             imm |= (read_byte)<<8;
@@ -562,17 +552,17 @@ int gb_instr(uint8_t op) {
             return 0;
         }
 
-        if (check_bits(op,s_0,s_0,s_x,s_x,s_0,s_0,s_1,s_1)) {
+        if ((op&0b11001111) == 0b00000011) {
             // inc r16
             write_r16(op>>4&3,read_r16(op>>4&3)+1);
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_x,s_x,s_1,s_0,s_1,s_1)) {
+        if ((op&0b11001111) == 0b00001011) {
             // dec r16
             write_r16(op>>4&3,read_r16(op>>4&3)-1);
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_x,s_x,s_1,s_0,s_0,s_1)) {
+        if ((op&0b11001111) == 0b00001001) {
             // add hl, r16
             uint32_t t = read_r16(2)+read_r16(op>>4&3);
             flags.n = 0;
@@ -582,7 +572,7 @@ int gb_instr(uint8_t op) {
             return 0;
         }
 
-        if (check_bits(op,s_0,s_0,s_x,s_x,s_x,s_1,s_0,s_0)) {
+        if ((op&0b11000111) == 0b00000100) {
             // inc r8
             uint16_t result = read_r8(op>>3&7)+1;
             flags.n = 0;
@@ -591,7 +581,7 @@ int gb_instr(uint8_t op) {
             write_r8(op>>3&7,result&0xff);
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_x,s_x,s_x,s_1,s_0,s_1)) {
+        if ((op&0b11000111) == 0b00000101) {
             // dec r8
             uint16_t result = read_r8(op>>3&7)-1;
             flags.n = 1;
@@ -601,13 +591,13 @@ int gb_instr(uint8_t op) {
             return 0;
         }
 
-        if (check_bits(op,s_0,s_0,s_x,s_x,s_x,s_1,s_1,s_0)) {
+        if ((op&0b11000111) == 0b00000110) {
             // ld r8, imm8
             write_r8(op>>3&7,read_byte);
             return 0;
         }
 
-        if (check_bits(op,s_0,s_0,s_0,s_0,s_0,s_1,s_1,s_1)) {
+        if (op == 0b00000111) {
             // rlca
             uint8_t c = regs.a>>7&1;
             regs.a = (regs.a<<1)|c;
@@ -617,7 +607,7 @@ int gb_instr(uint8_t op) {
             flags.c = c;
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_0,s_0,s_1,s_1,s_1,s_1)) {
+        if (op == 0b00001111) {
             // rrca
             uint8_t c = regs.a&1;
             regs.a = (regs.a>>1)|(c<<7);
@@ -627,7 +617,7 @@ int gb_instr(uint8_t op) {
             flags.c = c;
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_0,s_1,s_0,s_1,s_1,s_1)) {
+        if (op == 0b00010111) {
             // rla
             uint8_t c = regs.a>>7&1;
             regs.a = (regs.a<<1)|(flags.c);
@@ -637,7 +627,7 @@ int gb_instr(uint8_t op) {
             flags.c = c;
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_0,s_1,s_1,s_1,s_1,s_1)) {
+        if (op == 0b00011111) {
             // rra
             uint8_t c = regs.a&1;
             regs.a = (regs.a>>1)|(flags.c<<7);
@@ -647,7 +637,7 @@ int gb_instr(uint8_t op) {
             flags.c = c;
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_1,s_0,s_0,s_1,s_1,s_1)) {
+        if (op == 0b00100111) {
             // daa
             // code based off of https://blog.ollien.com/posts/gb-daa/
             uint8_t off1 = 0;
@@ -675,21 +665,21 @@ int gb_instr(uint8_t op) {
             flags.z = regs.a==0;
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_1,s_0,s_1,s_1,s_1,s_1)) {
+        if (op == 0b00101111) {
             // cpl
             regs.a ^= 0xFF;
             flags.n = 1;
             flags.h = 1;
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_1,s_1,s_0,s_1,s_1,s_1)) {
+        if (op == 0b00110111) {
             // scf
             flags.c = 1;
             flags.h = 0;
             flags.n = 0;
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_1,s_1,s_1,s_1,s_1,s_1)) {
+        if (op == 0b00111111) {
             // ccf
             flags.c ^= 1;
             flags.h = 0;
@@ -697,20 +687,20 @@ int gb_instr(uint8_t op) {
             return 0;
         }
 
-        if (check_bits(op,s_0,s_0,s_0,s_1,s_1,s_0,s_0,s_0)) {
+        if (op == 0b00011000) {
             // jr imm8
             int8_t off = (int8_t)read_byte;
             regs.pc += off;
             return 0;
         }
-        if (check_bits(op,s_0,s_0,s_1,s_x,s_x,s_0,s_0,s_0)) {
+        if ((op&0b11100111) == 0b00100000) {
             // jr cond, imm8
             int8_t off = (int8_t)read_byte;
             if (cond_code_GB(op)) regs.pc += off;
             return 0;
         }
 
-        if (check_bits(op,s_0,s_0,s_0,s_1,s_0,s_0,s_0,s_0)) {
+        if (op == 0b00010000) {
             // stop
             // NOP moment (i'm too lazy lol)
             read_byte;
@@ -718,22 +708,22 @@ int gb_instr(uint8_t op) {
         }
 
         // BLOCK 1
-        if (check_bits(op,s_0,s_1,s_1,s_1,s_0,s_1,s_1,s_0)) {
+        if (op == 0b01110110) {
             // halt
             has_halt = 1;
 
             regs.pc--;
-            //printf("HALT\n");
+            //printf("HALT");
             return 0;
         }
-        if (check_bits(op,s_0,s_1,s_x,s_x,s_x,s_x,s_x,s_x)) {
+        if ((op&0b11000000) == 0b01000000) {
             // ld r8, r8
             write_r8(op>>3&7,read_r8(op&7));
             return 0;
         }
 
         // BLOCK 2
-        if (check_bits(op,s_1,s_0,s_0,s_0,s_0,s_x,s_x,s_x)) {
+        if ((op&0b11111000) == 0b10000000) {
             // add a, r8
             uint8_t r = read_r8(op&7);
             uint8_t a = regs.a;
@@ -745,7 +735,7 @@ int gb_instr(uint8_t op) {
             flags.c = result>0xff;
             return 0;
         }
-        if (check_bits(op,s_1,s_0,s_0,s_0,s_1,s_x,s_x,s_x)) {
+        if ((op&0b11111000) == 0b10001000) {
             // adc a, r8
             uint8_t r = read_r8(op&7);
             uint8_t a = regs.a;
@@ -757,7 +747,7 @@ int gb_instr(uint8_t op) {
             flags.c = result>0xff;
             return 0;
         }
-        if (check_bits(op,s_1,s_0,s_0,s_1,s_0,s_x,s_x,s_x)) {
+        if ((op&0b11111000) == 0b10010000) {
             // sub a, r8
             uint8_t r = read_r8(op&7);
             uint8_t a = regs.a;
@@ -769,7 +759,7 @@ int gb_instr(uint8_t op) {
             flags.c = a<r;
             return 0;
         }
-        if (check_bits(op,s_1,s_0,s_0,s_1,s_1,s_x,s_x,s_x)) {
+        if ((op&0b11111000) == 0b10011000) {
             // sbc a, r8
             uint8_t r = read_r8(op&7);
             uint8_t a = regs.a;
@@ -782,7 +772,7 @@ int gb_instr(uint8_t op) {
             flags.c = result>0xff;
             return 0;
         }
-        if (check_bits(op,s_1,s_0,s_1,s_0,s_0,s_x,s_x,s_x)) {
+        if ((op&0b11111000) == 0b10100000) {
             // and a, r8
             uint8_t r = read_r8(op&7);
             regs.a &= r;
@@ -792,7 +782,7 @@ int gb_instr(uint8_t op) {
             flags.c = 0;
             return 0;
         }
-        if (check_bits(op,s_1,s_0,s_1,s_0,s_1,s_x,s_x,s_x)) {
+        if ((op&0b11111000) == 0b10101000) {
             // xor a, r8
             uint8_t r = read_r8(op&7);
             regs.a ^= r;
@@ -802,7 +792,7 @@ int gb_instr(uint8_t op) {
             flags.c = 0;
             return 0;
         }
-        if (check_bits(op,s_1,s_0,s_1,s_1,s_0,s_x,s_x,s_x)) {
+        if ((op&0b11111000) == 0b10110000) {
             // or a, r8
             uint8_t r = read_r8(op&7);
             regs.a |= r;
@@ -812,7 +802,7 @@ int gb_instr(uint8_t op) {
             flags.c = 0;
             return 0;
         }
-        if (check_bits(op,s_1,s_0,s_1,s_1,s_1,s_x,s_x,s_x)) {
+        if ((op&0b11111000) == 0b10111000) {
             // cp a, r8
             uint8_t r = read_r8(op&7);
             flags.z = regs.a==r;
@@ -823,7 +813,7 @@ int gb_instr(uint8_t op) {
         }
 
         // BLOCK 3
-        if (check_bits(op,s_1,s_1,s_0,s_0,s_0,s_1,s_1,s_0)) {
+        if (op == 0b11000110) {
             // add a, imm8
             uint8_t r = read_byte;
             uint8_t a = regs.a;
@@ -835,7 +825,7 @@ int gb_instr(uint8_t op) {
             flags.c = result>0xff;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_0,s_0,s_1,s_1,s_1,s_0)) {
+        if (op == 0b11001110) {
             // adc a, imm8
             uint8_t r = read_byte;
             uint8_t a = regs.a;
@@ -847,7 +837,7 @@ int gb_instr(uint8_t op) {
             flags.c = result>0xff;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_0,s_1,s_0,s_1,s_1,s_0)) {
+        if (op == 0b11010110) {
             // sub a, imm8
             uint8_t r = read_byte;
             uint8_t a = regs.a;
@@ -859,7 +849,7 @@ int gb_instr(uint8_t op) {
             flags.c = a<r;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_0,s_1,s_1,s_1,s_1,s_0)) {
+        if (op == 0b11011110) {
             // sbc a, imm8
             uint8_t r = read_byte;
             uint8_t a = regs.a;
@@ -872,7 +862,7 @@ int gb_instr(uint8_t op) {
             flags.c = result>0xff;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_0,s_0,s_1,s_1,s_0)) {
+        if (op == 0b11100110) {
             // and a, imm8
             uint8_t r = read_byte;
             regs.a &= r;
@@ -882,7 +872,7 @@ int gb_instr(uint8_t op) {
             flags.c = 0;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_0,s_1,s_1,s_1,s_0)) {
+        if (op == 0b11101110) {
             // xor a, imm8
             uint8_t r = read_byte;
             regs.a ^= r;
@@ -892,7 +882,7 @@ int gb_instr(uint8_t op) {
             flags.c = 0;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_1,s_0,s_1,s_1,s_0)) {
+        if (op == 0b11110110) {
             // or a, imm8
             uint8_t r = read_byte;
             regs.a |= r;
@@ -902,7 +892,7 @@ int gb_instr(uint8_t op) {
             flags.c = 0;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_1,s_1,s_1,s_1,s_0)) {
+        if (op == 0b11111110) {
             // cp a, imm8
             uint8_t r = read_byte;
             flags.z = regs.a==r;
@@ -911,7 +901,7 @@ int gb_instr(uint8_t op) {
             flags.c = regs.a<r;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_0,s_x,s_x,s_0,s_0,s_0)) {
+        if ((op&0b11100111) == 0b11000000) {
             // ret cond
             if (cond_code_GB(op)) {
                 regs.pc = readGB(regs.sp++);
@@ -920,14 +910,14 @@ int gb_instr(uint8_t op) {
             }
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_0,s_0,s_1,s_0,s_0,s_1)) {
+        if (op == 0b11001001) {
             // ret
             regs.pc = readGB(regs.sp++);
             regs.pc |= readGB(regs.sp++)<<8;
             --call_nest;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_0,s_1,s_1,s_0,s_0,s_1)) {
+        if (op == 0b11011001) {
             // reti (INCOMPLETE)
             do_irq = 1;
             regs.pc = readGB(regs.sp++);
@@ -935,26 +925,26 @@ int gb_instr(uint8_t op) {
             --call_nest;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_0,s_x,s_x,s_0,s_1,s_0)) {
+        if ((op&0b11100111) == 0b11000010) {
             // jp cond, imm16
             uint16_t imm = read_byte;
             imm |= (read_byte)<<8;
             if (cond_code_GB(op)) regs.pc = imm;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_0,s_0,s_0,s_0,s_1,s_1)) {
+        if (op == 0b11000011) {
             // jp imm16
             uint16_t imm = read_byte;
             imm |= (read_byte)<<8;
             regs.pc = imm;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_0,s_1,s_0,s_0,s_1)) {
+        if (op == 0b11101001) {
             // jp hl
             regs.pc = (regs.h<<8)|regs.l;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_0,s_x,s_x,s_1,s_0,s_0)) {
+        if ((op&0b11100111) == 0b11000100) {
             // call cond, imm16
             uint16_t imm = read_byte;
             imm |= (read_byte)<<8;
@@ -966,7 +956,7 @@ int gb_instr(uint8_t op) {
             }
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_0,s_0,s_1,s_1,s_0,s_1)) {
+        if (op == 0b11001101) {
             // call imm16
             uint16_t imm = read_byte;
             imm |= (read_byte)<<8;
@@ -976,7 +966,7 @@ int gb_instr(uint8_t op) {
             ++call_nest;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_x,s_x,s_x,s_1,s_1,s_1)) {
+        if ((op&0b11000111) == 0b11000111) {
             // rst tgt3
             writeGB(--regs.sp,regs.pc>>8);
             writeGB(--regs.sp,regs.pc&0xff);
@@ -985,7 +975,7 @@ int gb_instr(uint8_t op) {
             return 0;
         }
 
-        if (check_bits(op,s_1,s_1,s_x,s_x,s_0,s_0,s_0,s_1)) {
+        if ((op&0b11001111) == 0b11000001) {
             // pop r16stk
             uint8_t reg = (op>>4)&3;
             uint16_t val = readGB(regs.sp++);
@@ -1011,7 +1001,7 @@ int gb_instr(uint8_t op) {
             }
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_x,s_x,s_0,s_1,s_0,s_1)) {
+        if ((op&0b11001111) == 0b11000101) {
             // push r16stk
             uint8_t reg = (op>>4)&3;
             uint16_t val;
@@ -1034,34 +1024,34 @@ int gb_instr(uint8_t op) {
             return 0;
         }
 
-        if (check_bits(op,s_1,s_1,s_1,s_0,s_0,s_0,s_1,s_0)) {
+        if (op == 0b11100010) {
             // ldh [c], a
             writeGB(0xFF00|regs.c,regs.a);
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_0,s_0,s_0,s_0,s_0)) {
+        if (op == 0b11100000) {
             // ldh [imm8], a
             writeGB(0xFF00|read_byte,regs.a);
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_0,s_1,s_0,s_1,s_0)) {
+        if (op == 0b11101010) {
             // ld [imm16], a
             uint16_t imm = read_byte;
             imm |= (read_byte)<<8;
             writeGB(imm,regs.a);
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_1,s_0,s_0,s_1,s_0)) {
+        if (op == 0b11110010) {
             // ldh a, [c]
             regs.a = readGB(0xFF00|regs.c);
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_1,s_0,s_0,s_0,s_0)) {
+        if (op == 0b11110000) {
             // ldh a, [imm8]
             regs.a = readGB(0xFF00|read_byte);
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_1,s_1,s_0,s_1,s_0)) {
+        if (op == 0b11111010) {
             // ld a, [imm16]
             uint16_t imm = read_byte;
             imm |= (read_byte)<<8;
@@ -1069,7 +1059,7 @@ int gb_instr(uint8_t op) {
             return 0;
         }
 
-        if (check_bits(op,s_1,s_1,s_1,s_0,s_1,s_0,s_0,s_0)) {
+        if (op == 0b11101000) {
             // add sp, imm8
             int8_t off = read_byte;
             flags.z = 0;
@@ -1079,7 +1069,7 @@ int gb_instr(uint8_t op) {
             regs.sp += off;
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_1,s_1,s_0,s_0,s_0)) {
+        if (op == 0b11111000) {
             // ld hl, sp + imm8	
             int8_t off = read_byte;
             flags.z = 0;
@@ -1089,11 +1079,12 @@ int gb_instr(uint8_t op) {
             write_r16(2,regs.sp + off);
             return 0;
         }
-        if (check_bits(op,s_1,s_1,s_1,s_1,s_1,s_0,s_0,s_1)) {
+        if (op == 0b11111001) {
             // ld sp, hl
             regs.sp = read_r16(2);
             return 0;
         }
+
 
     }
     //printf("UNIMPLEMENTED OPCODE: %02x\n",op);
