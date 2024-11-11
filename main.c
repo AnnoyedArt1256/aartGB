@@ -170,6 +170,7 @@ void writeGB(uint16_t addr, uint8_t val) {
         if (addr >= 0xFE00 && addr < 0xFF00) oam[addr&0xff] = val;
         if (addr >= 0xFF10 && addr < 0xFF40) { 
             if ((gb_io[0x26]&128)||(addr==0xFF26)) audio_write(addr,val);
+            else gb_io[addr&0x7f] = val;
         } else if (addr >= 0xFF00 && addr < 0xFF80) {
             switch (addr&0x7f) {
                 case 0x00: { // OAM DMA
@@ -249,6 +250,7 @@ void writeGB(uint16_t addr, uint8_t val) {
                 case 0x41: // STAT
                     gb_io[addr&0x7f] = (val&0b01111000)|(gb_io[addr&0x7f]&7);
                     break;
+
                 default:
                     gb_io[addr&0x7f] = val;
                     break;
@@ -428,6 +430,7 @@ uint8_t trig_stat = 0;
 uint8_t old_buttons = 0xf;
 
 void gb_irq(int do_coincidence_check) {
+    uint8_t LCDC = gb_io[0x40];
     uint8_t LYC = gb_io[0x45];
     uint8_t STAT = gb_io[0x41];
     if (LY == LYC) {
@@ -440,7 +443,7 @@ void gb_irq(int do_coincidence_check) {
         gb_io[0x41] &= ~(1<<2); // LYC == LY
     }
 
-    if (LY < 144) {
+    if (LY < 144 && (LCDC & 128)) {
         if (line_cycles < (20<<DOUBLE_SPEED)) {
             gb_io[0x41] = (gb_io[0x41]&(255^3))|2; // mode 2: OAM scan
             if (gb_io[0x41]&(1<<5)&&!(trig_stat&(1<<5))) {
@@ -456,6 +459,8 @@ void gb_irq(int do_coincidence_check) {
                 trig_stat |= 1<<3;
             }
         }
+    } else {
+        gb_io[0x41] = (gb_io[0x41]&(255^3));
     }
 
     uint8_t new_buttons = readGB(0xFF00)&0xf;
@@ -480,15 +485,16 @@ int gb_instr(uint8_t op) {
             regs.pc--;
             for (int i = 0; i < 16; i++) writeGB(DMA_end_addr++,readGB(DMA_start_addr++));
             DMA_len -= 16;
+            gb_io[0x55] &= 0x80;
+            gb_io[0x55] |= ((DMA_len>>4)-1);
             if (DMA_len == 0) {
-                gb_io[0x55] &= 0x7F;
+                gb_io[0x55] = 0xff;
 
                 gb_io[0x51] = (DMA_start_addr>>8)&0xff;
                 gb_io[0x52] = DMA_start_addr&(0xff^15);
 
                 gb_io[0x53] = (DMA_end_addr>>8)&0xff;
                 gb_io[0x54] = DMA_end_addr&(0xff^15);
-
             }
             cycles += 8<<DOUBLE_SPEED;
             return 0;
@@ -825,6 +831,7 @@ int gb_instr(uint8_t op) {
             regs.pc += off;
             return 0;
         }
+
         if ((op&0b11100111) == 0b00100000) {
             // jr cond, imm8
             int8_t off = (int8_t)read_byte;
@@ -1336,6 +1343,8 @@ int main(int argc, char *argv[]) {
     gb_io[0x49] = 0xE4; // OBP1
 
     gb_io[0x70] = 1; // OBP1
+
+    gb_io[0x26] = 0x80; // NR52
 
     ram_bank = 1;
     regs.pc = 0x100;
