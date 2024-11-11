@@ -249,7 +249,7 @@ void chan_trigger(int i){
 		c->sweep.up      = !(val & 0x08);
 		c->sweep.shift   = (val & 0x07);
 		c->sweep.inc     = c->sweep.rate ? (128.0f / (float)(c->sweep.rate)) / FREQ : 0;
-		c->sweep.counter = nexttowardf(1.0f, 1.1f);
+		c->sweep.counter = 0.0f;
 	}
 
 	if(i == 2){ // wave
