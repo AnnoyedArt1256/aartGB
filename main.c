@@ -129,7 +129,11 @@ uint8_t readGB(uint16_t addr) {
         if (addr == 0xFF6B && CGB_MODE) {
             return OGP_colors[gb_io[0x6A]&0x3f];
         }
-        if (addr >= 0xFF10 && addr < 0xFF40) return gb_io[addr&0x7f]|ortab[(addr&0x7f)-0x10];
+        if (addr >= 0xFF10 && addr < 0xFF40) {
+            // "NO BOY! NO DEMO!"
+            if (addr >= 0xFF30 && (chans[2].enabled&&chans[2].powered)) return 0xFF;
+            else return gb_io[addr&0x7f]|ortab[(addr&0x7f)-0x10];
+         }
         if (addr >= 0xFF00 && addr < 0xFF80) return gb_io[addr&0x7f];
         if (addr >= 0xFF80) return hram[addr&0x7f];
         return 0;
@@ -459,7 +463,7 @@ void gb_irq(int do_coincidence_check) {
                 trig_stat |= 1<<3;
             }
         }
-    } else {
+    } else if (LY < 144) {
         gb_io[0x41] = (gb_io[0x41]&(255^3));
     }
 
@@ -1296,7 +1300,7 @@ void callback(void *udata, uint8_t *stream, int len)
                     pers_out[ch] = (pers_out[ch]+1)&255;
                 }
                 vol = wavetable_buffer[pers_out[ch]]<<1;
-                vol = chans[ch].volume == 0 ? 0 : ((vol>>(chans[ch].volume-1))-(16>>(chans[ch].volume-1))) * chan_playing(&chans[ch]);
+                vol = chans[ch].volume == 0 ? 0 : ((vol>>(chans[ch].volume-1))-(16>>(chans[ch].volume-1))) * chan_playing(&chans[2]);
                 out += ((float)(vol))/8.0;
             }
         }
@@ -1545,18 +1549,18 @@ int main(int argc, char *argv[]) {
         uint8_t LCDC = gb_io[0x40];
           
         if (line_cycles >= (6>>DOUBLE_SPEED)) {
-          if (LY == 143) did_VBLANK = 0;
-          if (LY == 144 && (!did_VBLANK)) {
-            if (LCDC & 128) {
+          if (LY == 144) {
+            if (LCDC & 128 && (!did_VBLANK)) {
                 gb_io[0x0F] |= 1<<0; // vblank
             }
-            if (STAT&(1<<4)) gb_io[0x0F] |= 1<<1;
+            if (STAT&(1<<4) && (!did_VBLANK)) gb_io[0x0F] |= 1<<1;
             gb_io[0x41] = (gb_io[0x41]&(255^3))|1; // mode 1: vblank
             did_VBLANK = 1;
           }
         }
 
         if (line_cycles >= (114<<DOUBLE_SPEED)) {
+          did_VBLANK = 0;
           if (LY == 143) {
               //render_cli();   
 		      SDL_UpdateTexture(texture, NULL, &pixels, 160 * sizeof(uint32_t));
@@ -1583,7 +1587,7 @@ int main(int argc, char *argv[]) {
         }
 
 
-        if ((line_cycles >= (20<<DOUBLE_SPEED)) && (!did_render)) {
+        if ((line_cycles >= (62<<DOUBLE_SPEED)) && (!did_render)) {
           did_render = 1;
           if (LY < 144) {
             if (CGB_MODE) do_scanline_CGB(LY);

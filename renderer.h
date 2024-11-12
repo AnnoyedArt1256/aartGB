@@ -274,11 +274,14 @@ void do_scanline_CGB(uint8_t LY) {
                             if (pixel_buffer[final_x]&4) continue; // BG priority
                         }
 
+                        if (pixel_buffer[final_x]&128) continue; // OBJ priority again
+
                         uint16_t final_raw_col = OGP_colors[pal_ind|(pixel_val&3)<<1|0];
                         final_raw_col |= OGP_colors[pal_ind|(pixel_val&3)<<1|1]<<8;
                         uint32_t final_col = (final_raw_col&0x1f)<<19;
                         final_col |= ((final_raw_col>>5)&0x1f)<<11;
                         final_col |= ((final_raw_col>>10)&0x1f)<<3;
+                        pixel_buffer[final_x] |= 128;
                         pixels[LY*160+final_x] = final_col;
                     }
                 }
@@ -304,11 +307,14 @@ void do_scanline_CGB(uint8_t LY) {
                             if (pixel_buffer[final_x]&4) continue; // BG priority
                         }
 
+                        if (pixel_buffer[final_x]&128) continue; // OBJ priority again
+
                         uint16_t final_raw_col = OGP_colors[pal_ind|(pixel_val&3)<<1|0];
                         final_raw_col |= OGP_colors[pal_ind|(pixel_val&3)<<1|1]<<8;
                         uint32_t final_col = (final_raw_col&0x1f)<<19;
                         final_col |= ((final_raw_col>>5)&0x1f)<<11;
                         final_col |= ((final_raw_col>>10)&0x1f)<<3;
+                        pixel_buffer[final_x] |= 128;
                         pixels[LY*160+final_x] = final_col;
                     }
                 }
