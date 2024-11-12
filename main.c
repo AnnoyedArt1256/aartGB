@@ -1429,6 +1429,8 @@ int main(int argc, char *argv[]) {
     DMA_len = 0;
     DMA_mode = 0;
 
+    int did_VBLANK = 0;
+
     while (!quit) {
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -1543,12 +1545,14 @@ int main(int argc, char *argv[]) {
         uint8_t LCDC = gb_io[0x40];
           
         if (line_cycles >= (6>>DOUBLE_SPEED)) {
-          if (LY == 144) {
+          if (LY == 143) did_VBLANK = 0;
+          if (LY == 144 && (!did_VBLANK)) {
             if (LCDC & 128) {
                 gb_io[0x0F] |= 1<<0; // vblank
             }
             if (STAT&(1<<4)) gb_io[0x0F] |= 1<<1;
             gb_io[0x41] = (gb_io[0x41]&(255^3))|1; // mode 1: vblank
+            did_VBLANK = 1;
           }
         }
 
