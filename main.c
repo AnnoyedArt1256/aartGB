@@ -435,7 +435,7 @@ void gb_irq(int do_coincidence_check) {
     uint8_t STAT = gb_io[0x41];
     if (LY == LYC) {
         gb_io[0x41] |= 1<<2; // LYC == LY
-        if ((STAT & (1<<6)) && !(trig_stat&(1<<1))) {
+        if ((STAT & (1<<6)) && !(trig_stat&(1<<1)) && (line_cycles >= (6>>DOUBLE_SPEED))) {
           gb_io[0x0F] |= 1<<1; // IF |= LCD
           trig_stat |= 1<<1;
         }
@@ -1542,6 +1542,15 @@ int main(int argc, char *argv[]) {
         uint8_t STAT = gb_io[0x41];
         uint8_t LCDC = gb_io[0x40];
           
+        if (line_cycles >= (6>>DOUBLE_SPEED)) {
+          if (LY == 144) {
+            if (LCDC & 128) {
+                gb_io[0x0F] |= 1<<0; // vblank
+            }
+            if (STAT&(1<<4)) gb_io[0x0F] |= 1<<1;
+            gb_io[0x41] = (gb_io[0x41]&(255^3))|1; // mode 1: vblank
+          }
+        }
 
         if (line_cycles >= (114<<DOUBLE_SPEED)) {
           if (LY == 143) {
@@ -1567,14 +1576,6 @@ int main(int argc, char *argv[]) {
           line_cycles -= 114<<DOUBLE_SPEED;
 
           LY = (LY+1)%154;
-
-          if (LY == 144) {
-            if (LCDC & 128) {
-                gb_io[0x0F] |= 1<<0; // vblank
-            }
-            if (STAT&(1<<4)) gb_io[0x0F] |= 1<<1;
-            gb_io[0x41] = (gb_io[0x41]&(255^3))|1; // mode 1: vblank
-          }
         }
 
 
