@@ -35,7 +35,7 @@ int CGB_MODE = 0;
 int DOUBLE_SPEED = 0;
 
 const uint8_t cycle_lut[256] = {
-   1, 3, 2, 2, 1, 1, 2, 1, 5, 2, 2, 2, 1, 1, 2, 1, 1, 3, 2, 2, 1, 1, 2, 1, 3, 2, 2, 2, 1, 1, 2, 1, 2, 3, 2, 2, 1, 1, 2, 1, 2, 2, 2, 2, 1, 1, 2, 1, 2, 3, 2, 2, 3, 3, 3, 1, 2, 2, 2, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 2, 3, 3, 4, 3, 4, 2, 4, 2, 4, 3, 0, 3, 6, 2, 4, 2, 3, 3, 0, 3, 4, 2, 4, 2, 4, 3, 0, 3, 0, 2, 4, 3, 3, 2, 0, 0, 4, 2, 4, 4, 1, 4, 0, 0, 0, 2, 4, 3, 3, 2, 1, 0, 4, 2, 4, 3, 2, 4, 1, 0, 0, 2, 4
+   1, 3, 2, 2, 1, 1, 2, 1, 5, 2, 2, 2, 1, 1, 2, 1, 1, 3, 2, 2, 1, 1, 2, 1, 3, 2, 2, 2, 1, 1, 2, 1, 2, 3, 2, 2, 1, 1, 2, 1, 2, 2, 2, 2, 1, 1, 2, 1, 2, 3, 2, 2, 3, 3, 3, 1, 2, 2, 2, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 2, 2, 2, 2, 2, 2, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 2, 3, 3, 4, 3, 4, 2, 4, 2, 4, 3, 1, 3, 6, 2, 4, 2, 3, 3, 0, 3, 4, 2, 4, 2, 4, 3, 0, 3, 0, 2, 4, 3, 3, 2, 0, 0, 4, 2, 4, 4, 1, 4, 0, 0, 0, 2, 4, 3, 3, 2, 1, 0, 4, 2, 4, 3, 2, 4, 1, 0, 0, 2, 4
 };
 
 const uint8_t cycle_lut_cb[256] = {
@@ -97,7 +97,7 @@ uint8_t readGB(uint16_t addr) {
         }
         if (addr >= 0xFE00 && addr < 0xFF00) return oam[addr&0xff];
         if (addr == 0xFF44) {
-            return LY;
+            return LY == 153 ? 0 : LY;
         }
 
         if (addr == 0xFF4D && CGB_MODE) {
@@ -173,8 +173,11 @@ void writeGB(uint16_t addr, uint8_t val) {
 
         if (addr >= 0xFE00 && addr < 0xFF00) oam[addr&0xff] = val;
         if (addr >= 0xFF10 && addr < 0xFF40) { 
+            /*
             if ((gb_io[0x26]&128)||(addr==0xFF26)) audio_write(addr,val);
             else gb_io[addr&0x7f] = val;
+            */
+            audio_write(addr,val);
         } else if (addr >= 0xFF00 && addr < 0xFF80) {
             switch (addr&0x7f) {
                 case 0x00: { // OAM DMA
@@ -192,12 +195,17 @@ void writeGB(uint16_t addr, uint8_t val) {
                     gb_io[0x70] = (val&7)==0?1:(val&7);
                     break;
 
-                case 0x51:
-                case 0x52:
-                case 0x53:
-                case 0x54: {
+                case 0x55: { // VRAM DMA length/mode/start
                     if (CGB_MODE) {
-                        gb_io[addr&0x7f] = val;
+
+                        if (val < 128 && DMA_mode == 1 && DMA_len != 0) { // stopping HDMA's'
+                            DMA_len = 0;
+                            gb_io[addr&0x7f] |= 0x80;
+                        } else {
+                            DMA_len = ((val&127)+1)<<4;
+                            gb_io[addr&0x7f] = val;
+                        }
+
                         DMA_start_addr = gb_io[0x52]|(gb_io[0x51]<<8);
                         DMA_start_addr &= ~15;
                         DMA_end_addr = gb_io[0x54]|(gb_io[0x53]<<8);
@@ -205,24 +213,7 @@ void writeGB(uint16_t addr, uint8_t val) {
                         DMA_end_addr &= ~(7<<13);
                         DMA_end_addr &= 0x1fff;
                         DMA_end_addr |= 0x8000;
-                    } else {
-                        gb_io[addr&0x7f] = val;
-                    }
-                    break;
-                }
-
-                case 0x55: { // VRAM DMA length/mode/start
-                    if (CGB_MODE) {
-                        if (val&128) {
-                            // hblank HDMA
-                            DMA_len = ((val&127)+1)<<4;
-                            DMA_mode = 1;
-                        } else {
-                            // general purpose DMA
-                            DMA_len = ((val&127)+1)<<4;
-                            DMA_mode = 0;
-                        }
-                        gb_io[addr&0x7f] = val;
+                        DMA_mode = val>>7;
                     } else {
                         gb_io[addr&0x7f] = val;
                     }
@@ -262,7 +253,7 @@ void writeGB(uint16_t addr, uint8_t val) {
         }
         else if (addr >= 0xFF80) hram[addr&0x7f] = val;
         if (addr == 0xFF01) r_FF01 = val;
-        if (addr == 0xFF02 && val == 0x81) putchar(r_FF01);
+        //if (addr == 0xFF02 && val == 0x81) putchar(r_FF01);
     }
     if (addr >= 0x2000 && addr < 0x4000) {
         rom_bank = (val&255)==0?1:(val&255);
@@ -439,7 +430,7 @@ void gb_irq(int do_coincidence_check) {
     uint8_t STAT = gb_io[0x41];
     if (LY == LYC) {
         gb_io[0x41] |= 1<<2; // LYC == LY
-        if ((STAT & (1<<6)) && !(trig_stat&(1<<1)) && (line_cycles >= (6>>DOUBLE_SPEED))) {
+        if ((STAT & (1<<6)) && !(trig_stat&(1<<1)) && (line_cycles >= (6<<DOUBLE_SPEED))) {
           gb_io[0x0F] |= 1<<1; // IF |= LCD
           trig_stat |= 1<<1;
         }
@@ -479,27 +470,23 @@ void gb_irq(int do_coincidence_check) {
 int gb_instr(uint8_t op) {
     //if (regs.pc >= 0x1c0 && regs.pc < 0x200) printf("%d ",line_cycles);
 
-
     gb_irq(0);
 
     if (DMA_len != 0 && CGB_MODE) {
-        uint8_t do_hdma = DMA_mode == 1 && (line_cycles >= (62<<DOUBLE_SPEED) || line_cycles <= (20<<DOUBLE_SPEED)) && LY < 144 && (!has_halt) && (!did_HDMA);
+        uint8_t do_hdma = DMA_mode == 1 && (line_cycles >= (62<<DOUBLE_SPEED)) && LY < 144 && (!has_halt) && (!did_HDMA);
         if (do_hdma) did_HDMA = 1;
         if (do_hdma || (DMA_mode == 0)) { 
             regs.pc--;
             for (int i = 0; i < 16; i++) writeGB(DMA_end_addr++,readGB(DMA_start_addr++));
             DMA_len -= 16;
-            gb_io[0x55] &= 0x80;
-            gb_io[0x55] |= ((DMA_len>>4)-1);
+            gb_io[0x55] = ((DMA_len>>4)-1)&0x7f;
             if (DMA_len == 0) {
                 gb_io[0x55] = 0xff;
-
-                gb_io[0x51] = (DMA_start_addr>>8)&0xff;
-                gb_io[0x52] = DMA_start_addr&(0xff^15);
-
-                gb_io[0x53] = (DMA_end_addr>>8)&0xff;
-                gb_io[0x54] = DMA_end_addr&(0xff^15);
             }
+            gb_io[0x51] = (DMA_start_addr>>8)&0xff;
+            gb_io[0x52] = DMA_start_addr&(0xff^15);
+            gb_io[0x53] = (DMA_end_addr>>8)&0xff;
+            gb_io[0x54] = DMA_end_addr&(0xff^15);
             cycles += 8<<DOUBLE_SPEED;
             return 0;
         }
@@ -1548,7 +1535,7 @@ int main(int argc, char *argv[]) {
         uint8_t STAT = gb_io[0x41];
         uint8_t LCDC = gb_io[0x40];
           
-        if (line_cycles >= (6>>DOUBLE_SPEED)) {
+        if (line_cycles >= (6<<DOUBLE_SPEED)) {
           if (LY == 144) {
             if (LCDC & 128 && (!did_VBLANK)) {
                 gb_io[0x0F] |= 1<<0; // vblank
@@ -1587,7 +1574,7 @@ int main(int argc, char *argv[]) {
         }
 
 
-        if ((line_cycles >= (62<<DOUBLE_SPEED)) && (!did_render)) {
+        if ((line_cycles >= (22<<DOUBLE_SPEED)) && (!did_render)) {
           did_render = 1;
           if (LY < 144) {
             if (CGB_MODE) do_scanline_CGB(LY);
