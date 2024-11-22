@@ -197,8 +197,7 @@ void writeGB(uint16_t addr, uint8_t val) {
 
                 case 0x55: { // VRAM DMA length/mode/start
                     if (CGB_MODE) {
-
-                        if (val < 128 && DMA_mode == 1 && DMA_len != 0) { // stopping HDMA's'
+                        if (val < 128 && DMA_mode == 1 && DMA_len > 0) { // stopping HDMA's
                             DMA_len = 0;
                             gb_io[addr&0x7f] |= 0x80;
                         } else {
@@ -255,7 +254,7 @@ void writeGB(uint16_t addr, uint8_t val) {
         if (addr == 0xFF01) r_FF01 = val;
         //if (addr == 0xFF02 && val == 0x81) putchar(r_FF01);
     }
-    if (addr >= 0x2000 && addr < 0x4000) {
+    if (addr >= 0x2000 && addr < 0x3000) {
         rom_bank = (val&255)==0?1:(val&255);
         //printf("bank: %02x %02d\n",val,val);
     }
@@ -424,7 +423,7 @@ int timer_cycles = 0;
 uint8_t trig_stat = 0;
 uint8_t old_buttons = 0xf;
 
-void gb_irq(int do_coincidence_check) {
+void gb_irq() {
     uint8_t LCDC = gb_io[0x40];
     uint8_t LYC = gb_io[0x45];
     uint8_t STAT = gb_io[0x41];
@@ -470,7 +469,7 @@ void gb_irq(int do_coincidence_check) {
 int gb_instr(uint8_t op) {
     //if (regs.pc >= 0x1c0 && regs.pc < 0x200) printf("%d ",line_cycles);
 
-    gb_irq(0);
+    gb_irq();
 
     if (DMA_len != 0 && CGB_MODE) {
         uint8_t do_hdma = DMA_mode == 1 && (line_cycles >= (62<<DOUBLE_SPEED)) && LY < 144 && (!has_halt) && (!did_HDMA);
@@ -478,6 +477,7 @@ int gb_instr(uint8_t op) {
         if (do_hdma || (DMA_mode == 0)) { 
             regs.pc--;
             for (int i = 0; i < 16; i++) writeGB(DMA_end_addr++,readGB(DMA_start_addr++));
+            DMA_end_addr = (DMA_end_addr&8191)|32768;
             DMA_len -= 16;
             gb_io[0x55] = ((DMA_len>>4)-1)&0x7f;
             if (DMA_len == 0) {
@@ -495,15 +495,12 @@ int gb_instr(uint8_t op) {
     if (has_halt || (do_irq && (hram[0x7F]&gb_io[0x0F]&0x1f))) {
         uint8_t can_int = hram[0x7F] & gb_io[0x0F] & 0x1f; // IE & IF
 
-
-        gb_irq(1);
-
         if (has_halt && can_int) {
             has_halt = 0;
             op = read_byte;
         } else if (has_halt) {
             regs.pc--;
-            cycles += 2; // used to be 1 but CPU usage wasn't the best tbh
+            cycles += 2<<DOUBLE_SPEED; // used to be 1 but CPU usage wasn't the best tbh
             return 0;
         }
 
